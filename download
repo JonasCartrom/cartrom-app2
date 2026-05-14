@@ -1,0 +1,580 @@
+// src/pages/Dashboard.jsx
+import { useState, useRef, useEffect } from "react";
+import {
+  collection, addDoc, updateDoc, deleteDoc,
+  doc, onSnapshot, query, where, serverTimestamp, orderBy,
+} from "firebase/firestore";
+
+import { db } from "../firebase";
+import { useAuth } from "../contexts/AuthContext";
+import { LOGO_SRC } from "../assets/logo";
+
+/* ─── CORES ────────────────────────────────────────────────── */
+const C = {
+  navy:"#1B2F6B",blue:"#5BBFCF",green:"#5DB840",greenL:"#72CC55",
+  greenXL:"#EBF7E6",blueXL:"#E0F5F7",navyXL:"#EEF1F8",
+  white:"#FFFFFF",off:"#F7F9FC",gray:"#6B7A8D",grayL:"#B0BEC5",
+  grayXL:"#ECEFF1",line:"#DEE5EE",text:"#1A2A3A",soft:"#4A5568",
+};
+const font = "'Barlow', sans-serif";
+const headerGrad = `linear-gradient(135deg, ${C.navy} 0%, #253C80 100%)`;
+const inp = err => ({
+  width:"100%",boxSizing:"border-box",background:C.white,
+  border:`1.5px solid ${err?"#D32F2F":C.line}`,borderRadius:10,
+  padding:"12px 14px",fontSize:14,color:C.text,outline:"none",fontFamily:font,
+});
+const cardBox = {
+  background:C.white,border:`1px solid ${C.line}`,borderRadius:14,
+  padding:"16px",marginBottom:12,boxShadow:"0 1px 4px rgba(11,37,69,0.06)",
+};
+
+/* ─── DADOS FEFCO / LINHAS ─────────────────────────────────── */
+const LINHAS = ["Linha Convencional","Linha SEC®","Linha Prime","Linha Supply"];
+const LC = {"Linha Convencional":C.blue,"Linha SEC®":C.green,"Linha Prime":"#7B1FA2","Linha Supply":"#E65100"};
+const LB = {"Linha Convencional":C.blueXL,"Linha SEC®":C.greenXL,"Linha Prime":"#F3E5F5","Linha Supply":"#FFF3E0"};
+const ONDAS = ["Onda A","Onda B","Onda C","Onda E","Onda F","Dupla BC","Dupla AB","Tripla ABB"];
+const SEGS = ["Automotivo","Alimentos & Bebidas","E-commerce","Eletroeletrônicos","Cosméticos & Higiene","Farmacêutico","Industrial","Varejo / PDV","Outro"];
+const FEFCO = [
+  {grupo:"Série 02 — Caixas de Papelão Ondulado",modelos:["0200 – Bandeja / Tampa simples","0201 – Caixa Regular (RSC) – fundo e tampa com abas","0202 – Caixa com abas iguais sobrepostas","0203 – Caixa com abas sobrepostas (variante)","0204 – Caixa com abas internas sobrepostas","0205 – Caixa com abas reforçadas","0206 – Caixa com abas cruzadas","0207 – Caixa com aba interna dupla","0210 – Caixa com encaixe de fundo","0211 – Caixa com fundo fixo e tampa de abas","0212 – Caixa com tampa deslizante","0213 – Caixa com encaixe lateral","0216 – Caixa com fundo semi-automático","0217 – Caixa com fundo automático colado","0220 – Caixa telescópica – corpo","0221 – Caixa telescópica – tampa","0222 – Caixa telescópica completa","0227 – Caixa com fundo 1-2-3 (pop-up)","0231 – Caixa com alça de transporte","0234 – Caixa com painel visor / janela","0235 – Caixa display com frente aberta"]},
+  {grupo:"Série 03 — Caixas com Tampa Separada",modelos:["0300 – Tampa simples (bandeja rasa)","0301 – Tampa com abas laterais","0302 – Tampa com encaixe","0303 – Tampa com aba frontal de travamento","0304 – Tampa telescópica profunda","0310 – Caixa e tampa separadas (conjunto)","0320 – Bandeja com tampa articulada","0330 – Caixa berço (fundo e tampa encaixados)"]},
+  {grupo:"Série 04 — Caixas Tipo Pasta / Maleta",modelos:["0401 – Caixa maleta de peça única","0402 – Maleta com aba de fechamento","0403 – Maleta com fundo vinculado","0405 – Maleta com divisória interna","0406 – Maleta com alça","0410 – Caixa tipo pasta – fundo automático","0412 – Pasta com janela","0421 – Caixa display maleta","0426 – Caixa com fechamento tipo envelope","0430 – Caixa com painel aberto / display","0440 – Embalagem tipo livro / book wrap","0460 – Caixa hexagonal","0470 – Caixa octagonal"]},
+  {grupo:"Série 05 — Caixas de Cinta / Sleeve",modelos:["0500 – Cinta / Sleeve simples","0501 – Cinta com aba de encaixe","0503 – Manga externa deslizante","0505 – Cinta com janela","0510 – Sleeve com fundo incorporado"]},
+  {grupo:"Série 07 — Caixas Automáticas",modelos:["0701 – Caixa automática simples","0702 – Caixa automática com fundo colado","0710 – Caixa automática tipo RSC","0713 – Caixa padrão correio (e-commerce)","0714 – Caixa e-commerce com fundo automático","0715 – Caixa e-commerce com abertura fácil","0720 – Caixa automática display","0730 – Caixa automática com alça"]},
+  {grupo:"Série 09 — Acessórios e Divisórias",modelos:["0901 – Separador / divisória simples","0902 – Grade de divisórias cruzadas","0907 – Berço / suporte interno","0910 – Forro interno de caixa","0912 – Forro de fundo (pad)","0920 – Cantoneira de papelão","0930 – Tubo de papelão ondulado","0950 – Calço / espaçador"]},
+];
+
+const BLANK = {cliente:"",segmento:"",linha:"",modelo:"",comprimento:"",largura:"",altura:"",aba:"",onda:"",cores:"",observacoes:"",fotos:[],fichaTecnicaUrl:"",fichaStatus:"",fichaReprovacaoMotivo:""};
+
+/* ─── ICONS ─────────────────────────────────────────────────── */
+const SearchIcon=()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>;
+const BackIcon=()=><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>;
+const PlusIcon=()=><svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+const CamIcon=()=><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>;
+const EditIcon=()=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>;
+const TrashIcon=()=><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>;
+const ChevIcon=()=><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>;
+const LogoutIcon=()=><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>;
+
+function SecLabel({t,small}){
+  return <div style={{color:small?C.gray:C.navy,fontSize:11,fontWeight:800,letterSpacing:2,textTransform:"uppercase",marginBottom:small?10:12,marginTop:small?0:22,paddingBottom:small?0:8,borderBottom:small?"none":`2px solid ${C.green}`}}>{t}</div>;
+}
+function FWrap({label,err,children}){
+  return <div style={{marginBottom:14}}><label style={{display:"block",fontSize:11,color:C.gray,fontWeight:700,letterSpacing:1.2,textTransform:"uppercase",marginBottom:6}}>{label}</label>{children}{err&&<p style={{color:"#D32F2F",fontSize:12,margin:"4px 0 0"}}>{err}</p>}</div>;
+}
+function DRow({k,v,vc,last}){
+  return <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 0",borderBottom:last?"none":`1px solid ${C.line}`}}><span style={{fontSize:13,color:C.gray,fontWeight:600}}>{k}</span><span style={{fontSize:13,color:vc||C.text,fontWeight:700,textAlign:"right",maxWidth:"65%"}}>{v}</span></div>;
+}
+
+/* ─── MAIN DASHBOARD ─────────────────────────────────────────── */
+export default function Dashboard() {
+  const { user, perfil, logout } = useAuth();
+  const isLider = perfil?.papel === "lideranca";
+
+  const [view, setView] = useState("list");
+  const [projetos, setProjetos] = useState([]);
+  const [form, setForm] = useState(BLANK);
+  const [editId, setEditId] = useState(null);
+  const [detailId, setDetailId] = useState(null);
+  const [search, setSearch] = useState("");
+  const [errors, setErrors] = useState({});
+  const [filt, setFilt] = useState("Todas");
+  const [saving, setSaving] = useState(false);
+  const fileRef = useRef();
+  const fichaRef = useRef();
+
+  const detail = projetos.find(p => p.id === detailId);
+
+  // Realtime listener — liderança vê todos, técnico vê só os seus
+  useEffect(() => {
+    let q;
+    if (isLider) {
+      q = query(collection(db, "projetos"), orderBy("criadoEm", "desc"));
+    } else {
+      q = query(collection(db, "projetos"), where("autorId", "==", user.uid), orderBy("criadoEm", "desc"));
+    }
+    const unsub = onSnapshot(q, snap => {
+      setProjetos(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+    });
+    return unsub;
+  }, [isLider, user.uid]);
+
+  const filtered = projetos.filter(p => {
+    const q = search.toLowerCase();
+    return (
+      (p.cliente?.toLowerCase().includes(q) || p.modelo?.toLowerCase().includes(q) || p.segmento?.toLowerCase().includes(q)) &&
+      (filt === "Todas" || p.linha === filt)
+    );
+  });
+
+  const sf = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  function validate() {
+    const e = {};
+    if (!form.cliente.trim()) e.cliente = "Campo obrigatório";
+    if (!form.linha) e.linha = "Selecione a linha";
+    if (!form.modelo) e.modelo = "Selecione o modelo";
+    if (!form.comprimento || +form.comprimento <= 0) e.comprimento = "Inválido";
+    if (!form.largura || +form.largura <= 0) e.largura = "Inválido";
+    if (!form.altura || +form.altura <= 0) e.altura = "Inválido";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  async function uploadFotos(fotos) {
+    // Storage desativado — fotos salvas localmente como base64
+    return fotos.map(f => ({ name: f.name, url: f.url || f.src || "" }));
+  }
+
+  async function save() {
+    if (!validate()) return;
+    setSaving(true);
+    try {
+      const fotosUpload = await uploadFotos(form.fotos);
+      const dados = {
+        ...form,
+        fotos: fotosUpload,
+        autorId: user.uid,
+        autorNome: perfil?.nome || user.email,
+        criadoEm: editId ? form.criadoEm : serverTimestamp(),
+        atualizadoEm: serverTimestamp(),
+      };
+      if (editId) {
+        await updateDoc(doc(db, "projetos", editId), dados);
+      } else {
+        await addDoc(collection(db, "projetos"), dados);
+      }
+      setForm(BLANK); setEditId(null); setView("list");
+    } catch (err) {
+      alert("Erro ao salvar: " + err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function openEdit(p) {
+    setForm({ ...BLANK, ...p, fotos: p.fotos || [] });
+    setEditId(p.id); setErrors({}); setView("form");
+  }
+
+  async function handleDelete(id) {
+    if (!window.confirm("Excluir este projeto?")) return;
+    await deleteDoc(doc(db, "projetos", id));
+    setView("list");
+  }
+
+  async function atualizarStatus(id, fichaStatus, fichaReprovacaoMotivo = "") {
+    await updateDoc(doc(db, "projetos", id), { fichaStatus, fichaReprovacaoMotivo, atualizadoEm: serverTimestamp() });
+  }
+
+  function addPhotos(e) {
+    Promise.all(Array.from(e.target.files).map(f => new Promise(res => {
+      const r = new FileReader(); r.onload = ev => res({ name: f.name, src: ev.target.result }); r.readAsDataURL(f);
+    }))).then(imgs => sf("fotos", [...form.fotos, ...imgs]));
+  }
+
+  /* ── HEADER COMPONENT ── */
+  function Header({ title, subtitle, showBack }) {
+    return (
+      <div style={{ background: headerGrad, padding: "14px 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            {showBack && (
+              <button onClick={() => setView("list")} style={{ background: "none", border: "none", color: C.white, cursor: "pointer", padding: 0, display: "flex" }}><BackIcon /></button>
+            )}
+            <div>
+              <div style={{ color: C.white, fontFamily: "'Barlow Condensed',sans-serif", fontSize: 20, fontWeight: 900 }}>{title}</div>
+              {subtitle && <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 2, textTransform: "uppercase" }}>{subtitle}</div>}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ background: "#fff", borderRadius: 8, padding: "3px 10px" }}>
+              <img src={LOGO_SRC} alt="Cartrom" style={{ height: 26, display: "block" }} />
+            </div>
+            {!showBack && (
+              <button onClick={logout} title="Sair" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: C.white, borderRadius: 8, padding: "6px 8px", cursor: "pointer", display: "flex", alignItems: "center" }}>
+                <LogoutIcon />
+              </button>
+            )}
+          </div>
+        </div>
+        {!showBack && (
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 12, marginTop: 4 }}>
+            {isLider ? "👔 Liderança" : "👷 Técnico"} — {perfil?.nome || user.email}
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ══════════ LIST VIEW ══════════ */
+  if (view === "list") return (
+    <div style={{ fontFamily: font, background: C.off, minHeight: "100vh", maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
+      <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet" />
+
+      <div style={{ background: headerGrad, padding: "0 20px" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 18, paddingBottom: 10 }}>
+          <div>
+            <div style={{ background: "#fff", borderRadius: 10, padding: "4px 12px", display: "inline-flex" }}>
+              <img src={LOGO_SRC} alt="Cartrom" style={{ height: 32, display: "block" }} />
+            </div>
+            <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 4 }}>
+              {isLider ? "👔 Liderança" : "👷 Técnico"} — {perfil?.nome || user.email}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <div style={{ background: "rgba(255,255,255,0.15)", borderRadius: 20, padding: "5px 12px", fontSize: 12, color: C.white, fontWeight: 700 }}>
+              {filtered.length} projetos
+            </div>
+            <button onClick={logout} title="Sair" style={{ background: "rgba(255,255,255,0.15)", border: "none", color: C.white, borderRadius: 8, padding: "7px 8px", cursor: "pointer", display: "flex" }}>
+              <LogoutIcon />
+            </button>
+          </div>
+        </div>
+
+        {/* Search */}
+        <div style={{ position: "relative", marginBottom: 12 }}>
+          <span style={{ position: "absolute", left: 12, top: "50%", transform: "translateY(-50%)", color: C.gray }}><SearchIcon /></span>
+          <input style={{ ...inp(false), paddingLeft: 38, background: "rgba(255,255,255,0.95)", border: "none" }}
+            placeholder="Buscar cliente, modelo…" value={search} onChange={e => setSearch(e.target.value)} />
+        </div>
+
+        {/* Filtros */}
+        <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 14, scrollbarWidth: "none" }}>
+          {["Todas", ...LINHAS].map(l => {
+            const active = filt === l;
+            return <button key={l} onClick={() => setFilt(l)} style={{ flexShrink: 0, background: active ? C.green : "rgba(255,255,255,0.12)", color: active ? C.white : "rgba(255,255,255,0.75)", border: `1px solid ${active ? C.green : "rgba(255,255,255,0.2)"}`, borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", fontFamily: font }}>{l === "Todas" ? "Todas" : l.replace("Linha ", "")}</button>;
+          })}
+        </div>
+      </div>
+
+      <div style={{ padding: "16px 16px 0" }}>
+        {filtered.length === 0 ? (
+          <div style={{ textAlign: "center", paddingTop: 80 }}>
+            <div style={{ fontSize: 48, marginBottom: 12 }}>📦</div>
+            <p style={{ color: C.text, fontWeight: 700, fontSize: 16, margin: 0 }}>Nenhum projeto encontrado</p>
+            <p style={{ color: C.gray, fontSize: 13, marginTop: 6 }}>Toque em + para cadastrar</p>
+          </div>
+        ) : filtered.map(p => {
+          const lc = LC[p.linha] || C.blue;
+          const lb = LB[p.linha] || C.blueXL;
+          return (
+            <div key={p.id} onClick={() => { setDetailId(p.id); setView("detail"); }}
+              style={{ ...cardBox, cursor: "pointer", overflow: "hidden", position: "relative" }}>
+              <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 3, background: `linear-gradient(90deg,${lc},${C.navy})` }} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 6 }}>
+                <div>
+                  <div style={{ color: C.navy, fontWeight: 800, fontSize: 15 }}>{p.cliente}</div>
+                  <div style={{ color: C.gray, fontSize: 12 }}>{p.segmento}</div>
+                </div>
+                <span style={{ background: lb, color: lc, borderRadius: 6, padding: "3px 10px", fontSize: 11, fontWeight: 700, marginLeft: 8 }}>{p.linha?.replace("Linha ", "")}</span>
+              </div>
+              {isLider && p.autorNome && (
+                <div style={{ fontSize: 11, color: C.blue, marginBottom: 4 }}>👷 {p.autorNome}</div>
+              )}
+              <div style={{ color: C.soft, fontSize: 12, marginBottom: 8 }}>{p.modelo}</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                {[["C", p.comprimento], ["L", p.largura], ["A", p.altura]].map(([k, v]) => (
+                  <span key={k} style={{ background: C.navyXL, color: C.navy, borderRadius: 6, padding: "3px 9px", fontSize: 12, fontWeight: 700 }}>{k} {v}mm</span>
+                ))}
+                {p.onda && <span style={{ background: C.greenXL, color: C.green, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 600 }}>{p.onda}</span>}
+                {p.fotos?.length > 0 && <span style={{ color: C.gray, fontSize: 11 }}>📷 {p.fotos.length}</span>}
+              </div>
+              <div style={{ color: C.grayL, fontSize: 11, marginTop: 10, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span>{p.criadoEm?.toDate ? p.criadoEm.toDate().toLocaleDateString("pt-BR") : ""}</span>
+                <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  {p.fichaStatus === "aprovada" && <span style={{ background: "#E8F5E9", color: C.green, borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>✅ Aprovada</span>}
+                  {p.fichaStatus === "reprovada" && <span style={{ background: "#FFEBEE", color: "#C62828", borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>❌ Reprovada</span>}
+                  {(!p.fichaStatus) && p.fichaTecnicaUrl && <span style={{ background: C.grayXL, color: C.gray, borderRadius: 6, padding: "2px 8px", fontSize: 10, fontWeight: 700 }}>🕐 Pendente</span>}
+                  <span style={{ color: C.blue }}><ChevIcon /></span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <button onClick={() => { setForm(BLANK); setEditId(null); setErrors({}); setView("form"); }}
+        style={{ position: "fixed", bottom: 28, right: 20, width: 60, height: 60, background: `linear-gradient(135deg,${C.green},${C.greenL})`, border: "none", borderRadius: "50%", color: C.white, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: `0 6px 20px ${C.green}66`, zIndex: 99 }}>
+        <PlusIcon />
+      </button>
+    </div>
+  );
+
+  /* ══════════ FORM VIEW ══════════ */
+  if (view === "form") return (
+    <div style={{ fontFamily: font, background: C.off, minHeight: "100vh", maxWidth: 480, margin: "0 auto", paddingBottom: 100 }}>
+      <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet" />
+      <Header title={editId ? "EDITAR PROJETO" : "NOVO PROJETO"} subtitle="Ficha Técnica" showBack />
+
+      <div style={{ padding: "4px 16px 20px" }}>
+        <SecLabel t="01 — Identificação" />
+        <FWrap label="Nome do Cliente" err={errors.cliente}>
+          <input style={inp(errors.cliente)} placeholder="Ex: Renault do Brasil" value={form.cliente} onChange={e => sf("cliente", e.target.value)} />
+        </FWrap>
+        <FWrap label="Segmento de Mercado">
+          <select style={{ ...inp(false), appearance: "none" }} value={form.segmento} onChange={e => sf("segmento", e.target.value)}>
+            <option value="">Selecione…</option>
+            {SEGS.map(s => <option key={s}>{s}</option>)}
+          </select>
+        </FWrap>
+
+        <SecLabel t="02 — Produto Cartrom" />
+        <FWrap label="Linha de Produto" err={errors.linha}>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            {LINHAS.map(l => {
+              const active = form.linha === l; const lc = LC[l]; const lb = LB[l];
+              return <button key={l} onClick={() => { sf("linha", l); sf("modelo", ""); }} style={{ background: active ? lb : C.white, border: `1.5px solid ${active ? lc : C.line}`, borderRadius: 10, padding: "11px 12px", color: active ? lc : C.gray, fontWeight: 700, fontSize: 13, cursor: "pointer", textAlign: "left", fontFamily: font }}>{l}</button>;
+            })}
+          </div>
+          {errors.linha && <p style={{ color: "#D32F2F", fontSize: 12, margin: "4px 0 0" }}>{errors.linha}</p>}
+        </FWrap>
+        {form.linha && (
+          <FWrap label="Modelo de Caixa (FEFCO)" err={errors.modelo}>
+            <select style={{ ...inp(errors.modelo), appearance: "none" }} value={form.modelo} onChange={e => sf("modelo", e.target.value)}>
+              <option value="">Selecione o modelo…</option>
+              {FEFCO.map(g => <optgroup key={g.grupo} label={g.grupo}>{g.modelos.map(m => <option key={m} value={m}>{m}</option>)}</optgroup>)}
+            </select>
+          </FWrap>
+        )}
+        <FWrap label="Tipo de Onda">
+          <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+            {ONDAS.map(o => {
+              const active = form.onda === o;
+              return <button key={o} onClick={() => sf("onda", active ? "" : o)} style={{ background: active ? C.navy : C.white, border: `1.5px solid ${active ? C.navy : C.line}`, borderRadius: 8, padding: "6px 12px", color: active ? C.white : C.soft, fontWeight: 600, fontSize: 12, cursor: "pointer", fontFamily: font }}>{o}</button>;
+            })}
+          </div>
+        </FWrap>
+
+        <SecLabel t="03 — Medidas Internas (mm)" />
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 14 }}>
+          {[["comprimento", "Comprimento", errors.comprimento], ["largura", "Largura", errors.largura], ["altura", "Altura", errors.altura]].map(([k, ph, err]) => (
+            <div key={k}>
+              <label style={{ fontSize: 10, color: C.gray, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", display: "block", marginBottom: 5 }}>{ph}</label>
+              <input type="number" style={inp(err)} placeholder="0" value={form[k]} onChange={e => sf(k, e.target.value)} />
+              {err && <p style={{ color: "#D32F2F", fontSize: 11, margin: "3px 0 0" }}>{err}</p>}
+            </div>
+          ))}
+        </div>
+        <FWrap label="Tamanho da Aba (mm)">
+          <input type="number" style={inp(false)} placeholder="Ex: 40" value={form.aba || ""} onChange={e => sf("aba", e.target.value)} />
+        </FWrap>
+
+        <SecLabel t="04 — Impressão e Cores" />
+        <FWrap label="Cores de Impressão">
+          <input style={inp(false)} placeholder="Ex: 2 cores — azul e branco, Pantone 485 C" value={form.cores || ""} onChange={e => sf("cores", e.target.value)} />
+        </FWrap>
+
+        <SecLabel t="05 — Observações Técnicas" />
+        <textarea style={{ ...inp(false), resize: "vertical", minHeight: 90, lineHeight: 1.6, marginBottom: 14 }}
+          placeholder="Gramatura, acabamento, reforços…" value={form.observacoes} onChange={e => sf("observacoes", e.target.value)} />
+
+        <SecLabel t="06 — Fotos do Projeto" />
+        {form.fotos.length > 0 && (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 10 }}>
+            {form.fotos.map((f, i) => (
+              <div key={i} style={{ position: "relative", borderRadius: 10, overflow: "hidden", aspectRatio: "1", background: C.grayXL }}>
+                <img src={f.src || f.url} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <button onClick={() => sf("fotos", form.fotos.filter((_, j) => j !== i))} style={{ position: "absolute", top: 4, right: 4, background: "rgba(11,37,69,0.75)", color: C.white, border: "none", borderRadius: "50%", width: 24, height: 24, fontSize: 13, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+        <button onClick={() => fileRef.current.click()} style={{ width: "100%", background: C.white, border: `1.5px dashed ${C.green}`, borderRadius: 10, padding: "13px", color: C.green, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: font, marginBottom: 14 }}>
+          <CamIcon /> Adicionar Foto
+        </button>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={addPhotos} />
+
+        <SecLabel t="07 — Ficha Técnica" />
+        {form.fichaTecnicaUrl ? (
+          <div style={{ background: C.blueXL, border: `1.5px solid ${C.blue}`, borderRadius: 10, padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <a href={form.fichaTecnicaUrl} target="_blank" rel="noreferrer" style={{ color: C.navy, fontWeight: 700, fontSize: 13 }}>📄 Ver Ficha Técnica</a>
+            <button onClick={() => sf("fichaTecnicaUrl", "")} style={{ background: "none", border: "none", color: C.gray, cursor: "pointer", fontSize: 18 }}>✕</button>
+          </div>
+        ) : (
+          <button onClick={() => fichaRef.current.click()} style={{ width: "100%", background: C.white, border: `1.5px dashed ${C.blue}`, borderRadius: 10, padding: "13px", color: C.blue, fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: font, marginBottom: 14 }}>
+            📄 Anexar Ficha Técnica (PDF / imagem)
+          </button>
+        )}
+        <input ref={fichaRef} type="file" accept=".pdf,image/*" style={{ display: "none" }} onChange={e => {
+          alert("Upload de fichas técnicas requer o plano Blaze do Firebase. Disponível em breve!");
+        }} />
+
+        {/* Status — técnico pode definir, liderança também */}
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ display: "block", fontSize: 11, color: C.gray, fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>Status da Ficha</label>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+            {[
+              { v: "", label: "Pendente", icon: "🕐", bg: C.grayXL, fg: C.gray, border: C.line },
+              { v: "aprovada", label: "Aprovada", icon: "✅", bg: "#E8F5E9", fg: C.green, border: C.green },
+              { v: "reprovada", label: "Reprovada", icon: "❌", bg: "#FFEBEE", fg: "#C62828", border: "#EF9A9A" },
+            ].map(op => {
+              const active = form.fichaStatus === op.v;
+              return <button key={op.v} onClick={() => { sf("fichaStatus", op.v); if (op.v !== "reprovada") sf("fichaReprovacaoMotivo", ""); }} style={{ background: active ? op.bg : C.white, border: `1.5px solid ${active ? op.border : C.line}`, borderRadius: 10, padding: "10px 6px", cursor: "pointer", fontFamily: font, display: "flex", flexDirection: "column", alignItems: "center", gap: 4 }}>
+                <span style={{ fontSize: 18 }}>{op.icon}</span>
+                <span style={{ fontSize: 11, fontWeight: 700, color: active ? op.fg : C.gray }}>{op.label}</span>
+              </button>;
+            })}
+          </div>
+        </div>
+        {form.fichaStatus === "reprovada" && (
+          <div style={{ marginBottom: 14 }}>
+            <label style={{ display: "block", fontSize: 11, color: "#C62828", fontWeight: 700, letterSpacing: 1.2, textTransform: "uppercase", marginBottom: 6 }}>Motivo da Reprovação</label>
+            <textarea style={{ ...inp(false), resize: "vertical", minHeight: 80, border: "1.5px solid #EF9A9A", background: "#FFEBEE", color: "#7B1A1A" }}
+              placeholder="Descreva o motivo…" value={form.fichaReprovacaoMotivo || ""} onChange={e => sf("fichaReprovacaoMotivo", e.target.value)} />
+          </div>
+        )}
+      </div>
+
+      <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, padding: "12px 16px", background: `linear-gradient(to top,${C.off} 70%,transparent)`, boxSizing: "border-box" }}>
+        <button onClick={save} disabled={saving} style={{ width: "100%", background: saving ? C.gray : headerGrad, color: C.white, border: "none", borderRadius: 12, padding: "16px", fontSize: 15, fontWeight: 800, cursor: saving ? "not-allowed" : "pointer", fontFamily: font }}>
+          {saving ? "SALVANDO…" : editId ? "SALVAR ALTERAÇÕES" : "CADASTRAR PROJETO"}
+        </button>
+      </div>
+    </div>
+  );
+
+  /* ══════════ DETAIL VIEW ══════════ */
+  if (view === "detail" && detail) {
+    const lc = LC[detail.linha] || C.blue;
+    const lb = LB[detail.linha] || C.blueXL;
+    const [motivoReprov, setMotivoReprov] = useState(detail.fichaReprovacaoMotivo || "");
+    const [showMotivoInput, setShowMotivoInput] = useState(false);
+
+    return (
+      <div style={{ fontFamily: font, background: C.off, minHeight: "100vh", maxWidth: 480, margin: "0 auto", paddingBottom: 40 }}>
+        <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700;800;900&family=Barlow+Condensed:wght@700;900&display=swap" rel="stylesheet" />
+
+        <div style={{ background: headerGrad, padding: "14px 20px" }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+              <button onClick={() => setView("list")} style={{ background: "none", border: "none", color: C.white, cursor: "pointer", padding: 0, display: "flex" }}><BackIcon /></button>
+              <div>
+                <div style={{ color: C.white, fontFamily: "'Barlow Condensed',sans-serif", fontSize: 20, fontWeight: 900 }}>FICHA TÉCNICA</div>
+                <div style={{ color: "rgba(255,255,255,0.55)", fontSize: 10, letterSpacing: 2, textTransform: "uppercase" }}>Detalhes do Projeto</div>
+              </div>
+            </div>
+            <div style={{ background: "#fff", borderRadius: 8, padding: "3px 10px" }}>
+              <img src={LOGO_SRC} alt="Cartrom" style={{ height: 26, display: "block" }} />
+            </div>
+          </div>
+          <span style={{ background: lb, color: lc, borderRadius: 8, padding: "5px 12px", fontSize: 11, fontWeight: 700 }}>{detail.linha?.replace("Linha ", "")}</span>
+        </div>
+
+        <div style={{ padding: "20px 16px" }}>
+          <div style={{ ...cardBox, borderTop: `3px solid ${lc}` }}>
+            <div style={{ color: C.gray, fontSize: 10, fontWeight: 700, letterSpacing: 2, textTransform: "uppercase", marginBottom: 4 }}>Cliente</div>
+            <div style={{ color: C.navy, fontWeight: 900, fontSize: 22, fontFamily: "'Barlow Condensed',sans-serif" }}>{detail.cliente}</div>
+            {detail.segmento && <div style={{ color: C.gray, fontSize: 13, marginTop: 4 }}>{detail.segmento}</div>}
+            {isLider && detail.autorNome && <div style={{ color: C.blue, fontSize: 12, marginTop: 4 }}>👷 Cadastrado por: {detail.autorNome}</div>}
+          </div>
+
+          <div style={cardBox}>
+            <SecLabel t="Produto" small />
+            <DRow k="Linha" v={detail.linha} vc={lc} />
+            <DRow k="Modelo" v={detail.modelo} />
+            {detail.onda && <DRow k="Tipo de Onda" v={detail.onda} last />}
+          </div>
+
+          <div style={cardBox}>
+            <SecLabel t="Medidas Internas" small />
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: detail.aba ? 10 : 0 }}>
+              {[["Comp.", detail.comprimento], ["Larg.", detail.largura], ["Alt.", detail.altura]].map(([k, v]) => (
+                <div key={k} style={{ background: C.navyXL, borderRadius: 10, padding: "12px 8px", textAlign: "center" }}>
+                  <div style={{ color: C.gray, fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 4 }}>{k}</div>
+                  <div style={{ color: C.navy, fontWeight: 900, fontSize: 22, fontFamily: "'Barlow Condensed',sans-serif" }}>{v}</div>
+                  <div style={{ color: C.gray, fontSize: 10, fontWeight: 600 }}>mm</div>
+                </div>
+              ))}
+            </div>
+            {detail.aba && <DRow k="Tamanho da Aba" v={`${detail.aba} mm`} last />}
+          </div>
+
+          {detail.cores && <div style={cardBox}><SecLabel t="Impressão e Cores" small /><p style={{ color: C.soft, fontSize: 14, margin: 0 }}>{detail.cores}</p></div>}
+          {detail.observacoes && <div style={cardBox}><SecLabel t="Observações Técnicas" small /><p style={{ color: C.soft, fontSize: 14, lineHeight: 1.7, margin: 0 }}>{detail.observacoes}</p></div>}
+
+          {detail.fotos?.length > 0 && (
+            <div style={cardBox}>
+              <SecLabel t={`Fotos (${detail.fotos.length})`} small />
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8 }}>
+                {detail.fotos.map((f, i) => (
+                  <a key={i} href={f.url || f.src} target="_blank" rel="noreferrer" style={{ borderRadius: 10, overflow: "hidden", aspectRatio: "1", background: C.grayXL, display: "block" }}>
+                    <img src={f.url || f.src} alt={f.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Ficha Técnica + Status */}
+          <div style={cardBox}>
+            <SecLabel t="Ficha Técnica" small />
+            {detail.fichaTecnicaUrl ? (
+              <a href={detail.fichaTecnicaUrl} target="_blank" rel="noreferrer" style={{ display: "flex", alignItems: "center", gap: 10, background: C.blueXL, borderRadius: 10, padding: "12px 14px", color: C.navy, textDecoration: "none", fontWeight: 700, fontSize: 13, marginBottom: 12 }}>
+                📄 Abrir Ficha Técnica
+              </a>
+            ) : (
+              <p style={{ color: C.gray, fontSize: 13, marginBottom: 12 }}>Nenhuma ficha técnica anexada</p>
+            )}
+
+            {/* Status atual */}
+            {detail.fichaStatus && (
+              <div style={{ background: detail.fichaStatus === "aprovada" ? "#E8F5E9" : detail.fichaStatus === "reprovada" ? "#FFEBEE" : C.grayXL, border: `1.5px solid ${detail.fichaStatus === "aprovada" ? C.green : detail.fichaStatus === "reprovada" ? "#EF9A9A" : C.line}`, borderRadius: 10, padding: "12px 14px", display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                <span style={{ fontSize: 20 }}>{detail.fichaStatus === "aprovada" ? "✅" : detail.fichaStatus === "reprovada" ? "❌" : "🕐"}</span>
+                <span style={{ fontWeight: 800, color: detail.fichaStatus === "aprovada" ? C.green : detail.fichaStatus === "reprovada" ? "#C62828" : C.gray }}>
+                  {detail.fichaStatus === "aprovada" ? "Aprovada" : detail.fichaStatus === "reprovada" ? "Reprovada" : "Pendente"}
+                </span>
+              </div>
+            )}
+            {detail.fichaStatus === "reprovada" && detail.fichaReprovacaoMotivo && (
+              <div style={{ background: "#FFEBEE", border: "1.5px solid #EF9A9A", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ color: "#C62828", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 5 }}>Motivo da Reprovação</div>
+                <p style={{ color: "#7B1A1A", fontSize: 14, lineHeight: 1.6, margin: 0 }}>{detail.fichaReprovacaoMotivo}</p>
+              </div>
+            )}
+
+            {/* Ação rápida de aprovação para liderança */}
+            {isLider && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 11, color: C.gray, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 }}>Ação da Liderança</div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  <button onClick={() => atualizarStatus(detail.id, "aprovada")} style={{ background: "#E8F5E9", border: `1.5px solid ${C.green}`, borderRadius: 10, padding: "12px", color: C.green, fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: font }}>
+                    ✅ Aprovar
+                  </button>
+                  <button onClick={() => setShowMotivoInput(true)} style={{ background: "#FFEBEE", border: "1.5px solid #EF9A9A", borderRadius: 10, padding: "12px", color: "#C62828", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: font }}>
+                    ❌ Reprovar
+                  </button>
+                </div>
+                {showMotivoInput && (
+                  <div style={{ marginTop: 10 }}>
+                    <textarea style={{ ...inp(false), minHeight: 80, border: "1.5px solid #EF9A9A", background: "#FFEBEE", color: "#7B1A1A", resize: "vertical" }}
+                      placeholder="Descreva o motivo da reprovação…" value={motivoReprov} onChange={e => setMotivoReprov(e.target.value)} />
+                    <button onClick={() => { atualizarStatus(detail.id, "reprovada", motivoReprov); setShowMotivoInput(false); }} style={{ width: "100%", background: "#C62828", color: C.white, border: "none", borderRadius: 10, padding: "12px", fontWeight: 800, fontSize: 14, cursor: "pointer", fontFamily: font, marginTop: 8 }}>
+                      CONFIRMAR REPROVAÇÃO
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ color: C.grayL, fontSize: 12, textAlign: "center", marginBottom: 18 }}>
+            {detail.criadoEm?.toDate ? `Criado em ${detail.criadoEm.toDate().toLocaleDateString("pt-BR")}` : ""}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            <button onClick={() => openEdit(detail)} style={{ background: headerGrad, color: C.white, border: "none", borderRadius: 12, padding: "14px", fontWeight: 800, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: font }}>
+              <EditIcon /> Editar
+            </button>
+            {(isLider || detail.autorId === user.uid) && (
+              <button onClick={() => handleDelete(detail.id)} style={{ background: C.white, color: "#C62828", border: "1.5px solid #FFCDD2", borderRadius: 12, padding: "14px", fontWeight: 700, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, fontFamily: font }}>
+                <TrashIcon /> Excluir
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
+}
