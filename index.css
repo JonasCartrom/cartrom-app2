@@ -1,6 +1,19 @@
-import { defineConfig } from 'vite'
-import react from '@vitejs/plugin-react'
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
 
-export default defineConfig({
-  plugins: [react()],
-})
+body {
+  background-color: #1B2F6B;
+  overscroll-behavior: none;
+}
+
+input, select, textarea, button {
+  font-family: inherit;
+}
+
+input, textarea, select {
+  -webkit-appearance: none;
+}
